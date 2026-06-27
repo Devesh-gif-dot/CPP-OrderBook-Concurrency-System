@@ -1,0 +1,33 @@
+=========================================
+ FILE 3: MATCHING ENGINE & LTP TRACKER
+=========================================
+
+Class: MatchingEngine (Can be integrated inside OrderBook)
+----------------------------------------------------------
+Purpose: Pairs overlapping orders and updates the 1-second LTP metrics.
+
+Methods:
+- MatchOrders: (Assumes Book Mutex is already locked by Place Order)
+    1. Loop: While Bids map is not empty AND Asks map is not empty.
+    2. Look at Top Bid Queue and Top Ask Queue.
+    3. If Top Bid Price >= Top Ask Price:
+        a. Get front order from Bid Queue and front order from Ask Queue.
+        b. *Lazy Deletion Check*: If either order has a quantity of 0 (was canceled), pop it from the queue and `continue` to the next loop iteration.
+        c. Calculate Trade Price (Price of the older order based on timestamp).
+        d. Calculate Trade Quantity (Minimum of the two order quantities).
+        e. Update LTP Tracker (Trade Price, Current Unix Second).
+        f. Deduct Trade Quantity from both orders.
+        g. If Bid order quantity == 0, pop it. If Ask order quantity == 0, pop it.
+        h. If a Queue becomes empty, remove that Price Level from the map.
+    4. Else: 
+        a. Break loop (Market is no longer crossed).
+
+- Update LtpTracker (trade_price, current_epoch_second):
+    1. If current_epoch_second == LtpTracker.current_second:
+        a. LtpTracker.min_price = min(LtpTracker.min_price, trade_price)
+        b. LtpTracker.max_price = max(LtpTracker.max_price, trade_price)
+    2. Else (A new second has started):
+        a. Log or save the old second's min/max if needed.
+        b. LtpTracker.current_second = current_epoch_second
+        c. LtpTracker.min_price = trade_price
+        d. LtpTracker.max_price = trade_price

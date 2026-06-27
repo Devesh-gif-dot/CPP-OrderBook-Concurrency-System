@@ -1,0 +1,31 @@
+=========================================
+   FILE 2: ORDER BOOK & QUEUES PLAN
+=========================================
+
+Class: OrderBook
+----------------
+Purpose: Manages active orders using Price-Time priority and handles simultaneous multi-user access.
+
+Data Structures (The Queues):
+- Bids Map: A self-balancing tree (like std::map with std::greater<double>) where the Key is the Price, and the Value is a Standard Queue (std::queue) of Orders. Keeps highest price at the top.
+- Asks Map: A self-balancing tree (std::map with default ascending order) where the Key is the Price, and the Value is a Standard Queue of Orders. Keeps lowest price at the top.
+- Order Lookup: A Hash Map (std::unordered_map) linking an order_id directly to its Order details for O(1) cancellation lookups.
+
+Concurrency Control:
+- Book Mutex (std::mutex): A single lock protecting the Bids Map, Asks Map, and Order Lookup. 
+
+Methods:
+- Place Order:
+    1. Lock Book Mutex.
+    2. Add Order to the Order Lookup map.
+    3. Push Order to the back of the queue at the specific price level in Bids or Asks map.
+    4. Call MatchOrders() (Internal).
+    5. Unlock Book Mutex.
+
+- Cancel Order:
+    1. Lock Book Mutex.
+    2. Check if order_id exists in Order Lookup.
+    3. If it exists, mark its quantity as 0 (Lazy Deletion). 
+       *Why Lazy Deletion? Searching through a std::queue to remove one item is slow. Setting quantity to 0 lets the Matching Engine simply pop and ignore it later, preventing conflicts while maintaining O(1) cancellation.*
+    4. Remove from Order Lookup.
+    5. Unlock Book Mutex.

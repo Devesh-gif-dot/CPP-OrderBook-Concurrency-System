@@ -1,0 +1,30 @@
+=========================================
+     FILE 1: CORE DATA MODELS PLAN
+=========================================
+
+Class: Account
+--------------
+Purpose: Tracks a user's funds in memory.
+Attributes:
+- account_id (Integer)
+- balance (Double): Positive means cash, negative means debt.
+- active_order_ids (Hash Set): Quick lookup of orders this user currently has open.
+
+Struct: Order
+-------------
+Purpose: Represents a single buy or sell request.
+Attributes:
+- order_id (Integer)
+- account_id (Integer)
+- type (Enum: BID or ASK)
+- price (Double)
+- quantity (Integer)
+- timestamp (Long Integer): Microsecond resolution for exact time placement.
+
+Struct: LtpTracker
+------------------
+Purpose: Tracks the Minimum and Maximum Last Traded Price (LTP) for the current 1-second window [i, i+1).
+Attributes:
+- current_second (Long Integer): The Unix epoch time in seconds.
+- min_price (Double): Lowest trade price in this second.
+- max_price (Double): Highest trade price in this second.
