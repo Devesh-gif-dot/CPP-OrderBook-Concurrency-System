@@ -17,6 +17,8 @@ make
 | [order_book.h](order_book.h) | `OrderBook` class interface |
 | [order_book.cpp](order_book.cpp) | Matching engine, cancellation, display |
 | [main.cpp](main.cpp) | Demo: single-threaded, concurrent, and race scenarios |
+| [rl_env.h](rl_env.h) | **Added for RL Agents Environment** — `TradingEnv` wrapper interface |
+| [rl_env.cpp](rl_env.cpp) | **Added for RL Agents Environment** — `TradingEnv` implementation |
 
 ## Core Design
 
@@ -109,3 +111,63 @@ The mutex isn't bolted on; it's a class member, enforced by every public method.
 3. **Cancellation** — order #6 cancelled via lazy deletion.
 4. **Concurrency** — three threads (buyer, seller, aggressor) place orders simultaneously; the mutex keeps the book consistent.
 5. **Race: cancel vs. match** — 60 resting asks, one matcher thread, two canceller threads. Each cancel either *wins* (still resting) or *loses* (already matched). `checkInvariants()` verifies live-order count consistency at the end.
+
+---
+
+## RL Agents Environment (additional work)
+
+The files [rl_env.h](rl_env.h) and [rl_env.cpp](rl_env.cpp) were added on top of the original order-book system so it can be driven by reinforcement-learning agents (2–3 agents booking and selling concurrently over a discrete price grid like `{1,2,…,10}`, with a per-agent active-order cap such as 5).
+
+### Why a separate layer?
+
+The base `OrderBook` was intentionally kept lean — no per-account enforcement, no observation API, no fill callback, real wall-clock timestamps. Rather than retrofit all of that into the matching engine, the RL-specific concerns live in a thin wrapper class `rl_env::TradingEnv`. The only change made to the original sources is a single hook in [order_book.h](order_book.h) / [order_book.cpp](order_book.cpp): a `TradeCallback` that the matching engine fires on every fill. Search either file for the comment `Added for RL Agents Environment` to see exactly what was touched.
+
+### What `TradingEnv` adds
+
+| Concern | Where it lives |
+|---|---|
+| Per-agent active-order limit (e.g. 5) | `TradingEnv` constructor arg `max_active_orders_per_agent` |
+| Discrete price grid (e.g. `{1,…,10}`) | `TradingEnv` constructor arg `discrete_prices` |
+| Per-agent balance + inventory + PnL | `AgentState` (in [rl_env.h](rl_env.h)) |
+| Action space (`HOLD`, `PLACE_BID`, `PLACE_ASK`, `CANCEL_OLDEST`) | `Action` (in [rl_env.h](rl_env.h)) |
+| Observation (best bid/ask, sim step) | `BookObservation` + `observe()` |
+| Deterministic sim clock instead of `chrono::system_clock` | `sim_step_` counter |
+| Fill tracking per agent | `onTrade` callback registered with `OrderBook` |
+| Thread-safe multi-agent stepping | extra `env_mutex_` over the existing `book_mutex` |
+
+### Build
+
+```bash
+make            # builds the original demo + rl_env.o
+```
+
+`rl_env.o` is built as a standalone object so you can link it into a training driver of your choice (a small C++ harness, a pybind11 module exposing `TradingEnv` to Python, etc.). It does **not** get linked into `order_book_demo` — the demo continues to behave exactly as before.
+
+### Sketch of using it
+
+```cpp
+#include "rl_env.h"
+
+rl_env::TradingEnv env(/*n_agents=*/2,
+                       /*max_active_orders_per_agent=*/5,
+                       /*discrete_prices=*/{1,2,3,4,5,6,7,8,9,10},
+                       /*initial_balance=*/1000.0);
+
+env.reset();
+
+rl_env::Action a;
+a.type = rl_env::ActionType::PLACE_BID;
+a.price_idx = 4;     // price = 5.0
+a.quantity = 1;
+
+auto result = env.step(/*agent_id=*/0, a);
+auto obs    = env.observe();
+auto state  = env.getAgentState(0);
+```
+
+### Known limitations (intentional, kept out of scope)
+
+- **No Python bindings yet.** Add via pybind11; the env's API is already shaped to make this straightforward.
+- **`observe()` returns a thin observation.** The base `OrderBook` doesn't expose a depth getter; the wrapper avoids monkey-patching it. When you add scripted market makers, you'll want a `getDepth()` on `OrderBook` and to fill `bid_depth`/`ask_depth` properly here.
+- **No reward function baked in.** `AgentState.realized_pnl` is provided; the policy code decides how to shape rewards.
+- **No shorting.** `PLACE_ASK` requires `inventory >= quantity`. Relax if your RL setup needs it.

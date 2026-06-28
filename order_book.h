@@ -9,6 +9,21 @@
 #include <memory>
 #include <functional>
 
+// ---- Added for RL Agents Environment (see rl_env.h) ----
+// Emitted by the matching engine on every fill so an external
+// observer (e.g. TradingEnv) can compute rewards without re-running
+// the matcher itself.
+struct TradeEvent {
+    int    buy_order_id;
+    int    sell_order_id;
+    double price;
+    int    quantity;
+    long long timestamp;
+};
+
+using TradeCallback = std::function<void(const TradeEvent&)>;
+// --------------------------------------------------------
+
 class OrderBook {
 private:
     // Bids: highest price first (descending). Best bid is at begin().
@@ -25,6 +40,10 @@ private:
     std::mutex book_mutex;
 
     LtpTracker ltp;
+
+    // Set by setTradeCallback; invoked from matchOrders while the
+    // book_mutex is held. Added for RL Agents Environment.
+    TradeCallback trade_cb;
 
     // Internal helpers assume book_mutex is already held.
     void matchOrders();
@@ -51,4 +70,10 @@ public:
     void displayAsks();
     void displayBook();
     void displayLtp();
+
+    // ---- Added for RL Agents Environment ----
+    // Register a callback fired on each trade. Called with the
+    // book_mutex held, so the callback must be short and must not
+    // call back into OrderBook (would deadlock).
+    void setTradeCallback(TradeCallback cb);
 };

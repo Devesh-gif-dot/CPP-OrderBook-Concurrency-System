@@ -104,6 +104,13 @@ void OrderBook::matchOrders() {
                   << "  buy#" << bid_order->order_id
                   << " <-> sell#" << ask_order->order_id << "\n";
 
+        // Notify any registered observer (RL env). Added for RL Agents Environment.
+        if (trade_cb) {
+            TradeEvent ev{bid_order->order_id, ask_order->order_id,
+                          trade_price, trade_qty, current_sec};
+            trade_cb(ev);
+        }
+
         bid_order->quantity -= trade_qty;
         ask_order->quantity -= trade_qty;
 
@@ -216,4 +223,10 @@ void OrderBook::displayBook() {
 void OrderBook::displayLtp() {
     std::lock_guard<std::mutex> lock(book_mutex);
     printLtpNoLock();
+}
+
+// ---- Added for RL Agents Environment ----
+void OrderBook::setTradeCallback(TradeCallback cb) {
+    std::lock_guard<std::mutex> lock(book_mutex);
+    trade_cb = std::move(cb);
 }
